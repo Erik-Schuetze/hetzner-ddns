@@ -1,0 +1,15 @@
+params:
+  refresh_interval: 15
+hetzner:
+  zones:
+    - zone_id: "erik-schuetze.dev"
+      records:
+        - name: "@"
+          type: "A"
+          ttl: 3600
+        - name: "www"
+          type: "A"
+          ttl: 3600
+        - name: "mail"
+          type: "A"
+          ttl: 3600
