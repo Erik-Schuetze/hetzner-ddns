@@ -3,6 +3,7 @@ package ipdetect
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -34,13 +35,16 @@ func fetchIP(service string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
 
-	// Trim whitespace and newlines
 	return strings.TrimSpace(string(body)), nil
 }
