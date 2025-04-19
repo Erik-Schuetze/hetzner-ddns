@@ -88,7 +88,7 @@ func (c *Controller) Run(ctx context.Context) error {
 
 func (c *Controller) reloadConfig() error {
 	// Load the new config
-	newConfig, err := config.Load()
+	newConfig, err := config.Load(c.configPath)
 	if err != nil {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
