@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hetzner-ddns-deployment
+  namespace: hetzner-ddns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hetzner-ddns
+  template:
+    metadata:
+      labels:
+        app: hetzner-ddns
+    spec:
+      containers:
+      - name: ddns
+        image: your-repo/hetzner-ddns:latest
+        env:
+        - name: HETZNER_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hetzner-ddns-secret
+              key: HETZNER_API_TOKEN
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+      volumes:
+      - name: config-volume
+        configMap:
+          name: hetzner-ddns-config

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hetzner-ddns-config
+  namespace: hetzner-ddns
+data:
+  config.yaml: |
+    params:
+      refresh_interval: 15
+    hetzner:
+      zones:
+        - zone_id: "your-zone"
+          records:
+            - name: "@"
+              type: "A"
+              ttl: 3600
+            - name: "www"
+              type: "A"
+              ttl: 3600
+            - name: "mail"
+              type: "A"
+              ttl: 3600
