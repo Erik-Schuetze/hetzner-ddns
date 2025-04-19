@@ -23,10 +23,10 @@ type Config struct {
 	} `yaml:"hetzner"`
 }
 
-func Load() (*Config, error) {
+func Load(configPath string) (*Config, error) {
 	config := new(Config)
 	//yamlFile, err := os.ReadFile("/config/config.yaml")
-	yamlFile, err := os.ReadFile("./config.yaml")
+	yamlFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}
