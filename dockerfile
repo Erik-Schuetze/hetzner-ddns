@@ -12,8 +12,8 @@ FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=builder /app/hetzner-ddns .
 
-# Create the config directory for the config file
-RUN mkdir -p /config
+# Copy the config directory from builder
+COPY --from=builder /config /config
 
 USER nonroot:nonroot
 ENTRYPOINT ["/app/hetzner-ddns"]
