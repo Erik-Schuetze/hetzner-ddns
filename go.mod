@@ -3,7 +3,6 @@ module github.com/erik-schuetze/hetzner-ddns
 go 1.24.2
 
 require (
-	github.com/fsnotify/fsnotify v1.9.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

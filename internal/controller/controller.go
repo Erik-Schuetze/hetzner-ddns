@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/fsnotify/fsnotify"
 
 	"github.com/erik-schuetze/hetzner-ddns/internal/config"
 	"github.com/erik-schuetze/hetzner-ddns/internal/hetzner"
@@ -32,31 +29,13 @@ func NewController(cfg *config.Config, configPath string) *Controller {
 
 // Run starts the reconciliation loop and handles graceful shutdown
 func (c *Controller) Run(ctx context.Context) error {
-	// Set up config file watcher to reload config on changes
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("failed to create watcher: %w", err)
-	}
-	defer func() {
-		if err := watcher.Close(); err != nil {
-			log.Printf("Error closing watcher: %v", err)
-		}
-	}()
-
-	// Watch both the config file and its parent directory
-	configDir := filepath.Dir(c.configPath)
-	if err := watcher.Add(configDir); err != nil {
-		return fmt.Errorf("failed to watch config directory: %w", err)
-	}
-
 	// Start a goroutine to query the API and handle ddns updates
 	ticker := time.NewTicker(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
 	defer ticker.Stop()
 
 	// Do initial reconciliation
 	if err := c.reconcile(); err != nil {
-		// Log error but don't exit - Kubernetes will restart if we exit
-		log.Printf("Error in reconciliation: %v", err)
+		log.Printf("Error in initial reconciliation: %v", err)
 	}
 
 	for {
@@ -64,30 +43,15 @@ func (c *Controller) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			log.Println("Shutting down gracefully...")
 			return nil
-		case event := <-watcher.Events:
-			// Watch for both Write and Create events (symlink updates)
-			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
-				if event.Name == c.configPath {
-					log.Println("Config file modified. Reloading...")
-					// Add small delay to ensure file is fully written
-					time.Sleep(100 * time.Millisecond)
-					if err := c.reloadConfig(); err != nil {
-						log.Printf("Failed to reload config: %v", err)
-						continue
-					}
-					// Update ticker interval
-					ticker.Reset(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
-					// Trigger immediate reconciliation
-					if err := c.reconcile(); err != nil {
-						log.Printf("Reconciliation after config reload failed: %v", err)
-					}
-				}
-			}
-		case err := <-watcher.Errors:
-			log.Printf("Watch error: %v", err)
 		case <-ticker.C:
+			// Reload config first
+			if err := c.reloadConfig(); err != nil {
+				log.Printf("Failed to reload config: %v", err)
+				continue
+			}
+
+			// Then reconcile
 			if err := c.reconcile(); err != nil {
-				// Log error but don't exit - let Kubernetes handle restarts
 				log.Printf("Error in reconciliation: %v", err)
 			}
 		}
