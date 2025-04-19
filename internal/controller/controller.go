@@ -36,7 +36,11 @@ func (c *Controller) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
-	defer watcher.Close()
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			log.Printf("Error closing watcher: %v", err)
+		}
+	}()
 
 	if err := watcher.Add(c.configPath); err != nil {
 		return fmt.Errorf("failed to watch config file: %w", err)

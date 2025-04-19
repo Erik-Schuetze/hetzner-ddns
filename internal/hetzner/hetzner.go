@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	"log"
 	"net/http"
 	"os"
 )
@@ -32,98 +32,63 @@ func GetApiToken() string {
 	return apiToken
 }
 
-func GetRecordById(recordID string) {
-	// Get Record (GET https://dns.hetzner.com/api/v1/records/{RecordID})
-
-	// Create client
-	client := &http.Client{}
-
-	// Create request
-	url := fmt.Sprintf("https://dns.hetzner.com/api/v1/records/%s", recordID)
-	req, err := http.NewRequest("GET", url, nil)
-
-	// Headers
-	apiToken := GetApiToken()
-	req.Header.Add("Auth-API-Token", apiToken)
-
-	// Fetch Request
-	resp, err := client.Do(req)
-
-	if err != nil {
-		fmt.Println("Failure : ", err)
-	}
-
-	// Read Response Body
-	respBody, _ := io.ReadAll(resp.Body)
-
-	// Display Results
-	fmt.Println("response Status : ", resp.Status)
-	fmt.Println("response Headers : ", resp.Header)
-	fmt.Println("response Body : ", string(respBody))
-}
-
 func GetAllRecordsByZone(zoneID string) ([]Record, error) {
-	// Get Records (GET https://dns.hetzner.com/api/v1/records?zone_id={ZoneID})
-
-	// Create client
 	client := &http.Client{}
-
-	// Create request
 	url := fmt.Sprintf("https://dns.hetzner.com/api/v1/records?zone_id=%s", zoneID)
+
 	req, err := http.NewRequest("GET", url, nil)
-
-	// Headers
-	apiToken := GetApiToken()
-	req.Header.Add("Auth-API-Token", apiToken)
-
-	parseFormErr := req.ParseForm()
-	if parseFormErr != nil {
-		fmt.Println(parseFormErr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Fetch Request
+	req.Header.Add("Auth-API-Token", GetApiToken())
+
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %v", err)
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	var response RecordsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return response.Records, nil
 }
 
 func UpdateRecord(record Record) error {
-	// Update Record (PUT https://dns.hetzner.com/api/v1/records/{RecordID})
-	jsonContent := fmt.Sprintf(`{"value": "%s","ttl": %d,"type": "%s","name": "%s","zone_id": "%s"}`, record.Value, record.TTL, record.Type, record.Name, record.ZoneID)
-	json := []byte(jsonContent)
-	body := bytes.NewBuffer(json)
+	jsonContent := fmt.Sprintf(`{"value":"%s","ttl":%d,"type":"%s","name":"%s","zone_id":"%s"}`,
+		record.Value, record.TTL, record.Type, record.Name, record.ZoneID)
+	body := bytes.NewBufferString(jsonContent)
 
-	// Create client
 	client := &http.Client{}
-
-	// Create request
 	url := fmt.Sprintf("https://dns.hetzner.com/api/v1/records/%s", record.ID)
+
 	req, err := http.NewRequest("PUT", url, body)
-
-	// Headers
-	req.Header.Add("Content-Type", "application/json")
-	apiToken := GetApiToken()
-	req.Header.Add("Auth-API-Token", apiToken)
-
-	// Fetch Request
-	resp, err := client.Do(req)
-
 	if err != nil {
-		fmt.Println("Failure : ", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Auth-API-Token", GetApiToken())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to update record: %s", resp.Status)
-	} else {
-		return nil
 	}
+	return nil
 }
