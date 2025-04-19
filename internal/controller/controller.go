@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -42,8 +43,10 @@ func (c *Controller) Run(ctx context.Context) error {
 		}
 	}()
 
-	if err := watcher.Add(c.configPath); err != nil {
-		return fmt.Errorf("failed to watch config file: %w", err)
+	// Watch both the config file and its parent directory
+	configDir := filepath.Dir(c.configPath)
+	if err := watcher.Add(configDir); err != nil {
+		return fmt.Errorf("failed to watch config directory: %w", err)
 	}
 
 	// Start a goroutine to query the API and handle ddns updates
@@ -62,17 +65,22 @@ func (c *Controller) Run(ctx context.Context) error {
 			log.Println("Shutting down gracefully...")
 			return nil
 		case event := <-watcher.Events:
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				log.Println("Config file modified. Reloading...")
-				if err := c.reloadConfig(); err != nil {
-					log.Printf("Failed to reload config: %v", err)
-					continue
-				}
-				// Update ticker interval
-				ticker.Reset(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
-				// Trigger immediate reconciliation
-				if err := c.reconcile(); err != nil {
-					log.Printf("Reconciliation after config reload failed: %v", err)
+			// Watch for both Write and Create events (symlink updates)
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				if event.Name == c.configPath {
+					log.Println("Config file modified. Reloading...")
+					// Add small delay to ensure file is fully written
+					time.Sleep(100 * time.Millisecond)
+					if err := c.reloadConfig(); err != nil {
+						log.Printf("Failed to reload config: %v", err)
+						continue
+					}
+					// Update ticker interval
+					ticker.Reset(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
+					// Trigger immediate reconciliation
+					if err := c.reconcile(); err != nil {
+						log.Printf("Reconciliation after config reload failed: %v", err)
+					}
 				}
 			}
 		case err := <-watcher.Errors:
