@@ -11,7 +11,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o hetzner-ddns .
 FROM gcr.io/distroless/static-debian12
 WORKDIR /app
 COPY --from=builder /app/hetzner-ddns .
-COPY config.yaml /config/config.yaml
+
+# Create the config directory for the config file
+RUN mkdir -p /config
 
 USER nonroot:nonroot
 ENTRYPOINT ["/app/hetzner-ddns"]
