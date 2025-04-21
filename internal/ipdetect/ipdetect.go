@@ -41,6 +41,11 @@ func fetchIP(service string) (string, error) {
 		}
 	}()
 
+	// Check for non-200 status codes
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("service returned status code %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
