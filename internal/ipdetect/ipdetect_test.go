@@ -65,32 +65,23 @@ func TestGetPublicIP(t *testing.T) {
 			originalServices := ipCheckServices
 			defer func() { ipCheckServices = originalServices }()
 
-			// Create test server
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Get the response for the current service being tested
-				var currentResponse struct {
-					status int
-					body   string
-					err    error
-				}
+			// Create test servers for each response
+			servers := make([]string, 0)
+			for _, resp := range tt.responses {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if resp.err != nil {
+						http.Error(w, resp.err.Error(), http.StatusInternalServerError)
+						return
+					}
+					w.WriteHeader(resp.status)
+					fmt.Fprint(w, resp.body)
+				}))
+				defer server.Close()
+				servers = append(servers, server.URL)
+			}
 
-				// Find the first matching response
-				for _, resp := range tt.responses {
-					currentResponse = resp
-					break
-				}
-
-				if currentResponse.err != nil {
-					http.Error(w, currentResponse.err.Error(), http.StatusInternalServerError)
-					return
-				}
-				w.WriteHeader(currentResponse.status)
-				fmt.Fprint(w, currentResponse.body)
-			}))
-			defer server.Close()
-
-			// Replace real services with test server
-			ipCheckServices = []string{server.URL}
+			// Replace real services with test servers
+			ipCheckServices = servers
 
 			// Run the test
 			gotIP, err := GetPublicIP()
