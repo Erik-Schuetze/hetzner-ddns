@@ -74,7 +74,9 @@ func TestGetPublicIP(t *testing.T) {
 						return
 					}
 					w.WriteHeader(resp.status)
-					fmt.Fprint(w, resp.body)
+					if _, err := fmt.Fprint(w, resp.body); err != nil {
+						t.Errorf("Failed to write response: %v", err)
+					}
 				}))
 				defer server.Close()
 				servers = append(servers, server.URL)
@@ -135,7 +137,9 @@ func TestFetchIP(t *testing.T) {
 					return
 				}
 				w.WriteHeader(tt.status)
-				fmt.Fprint(w, tt.response)
+				if _, err := fmt.Fprint(w, tt.response); err != nil {
+					t.Errorf("Failed to write response: %v", err)
+				}
 			}))
 			defer server.Close()
 

@@ -39,7 +39,9 @@ func TestGetAllRecordsByZone(t *testing.T) {
 
 		// Send response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(hetzner.RecordsResponse{Records: records})
+		if err := json.NewEncoder(w).Encode(hetzner.RecordsResponse{Records: records}); err != nil {
+			t.Errorf("Failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -47,7 +49,9 @@ func TestGetAllRecordsByZone(t *testing.T) {
 	hetzner.BaseURL = server.URL
 
 	// Set test environment
-	os.Setenv("HETZNER_API_TOKEN", "test-token")
+	if err := os.Setenv("HETZNER_API_TOKEN", "test-token"); err != nil {
+		t.Fatalf("Failed to set environment variable: %v", err)
+	}
 
 	// Test successful case
 	t.Run("successful records retrieval", func(t *testing.T) {
@@ -88,7 +92,9 @@ func TestUpdateRecord(t *testing.T) {
 	hetzner.BaseURL = server.URL
 
 	// Set test environment
-	os.Setenv("HETZNER_API_TOKEN", "test-token")
+	if err := os.Setenv("HETZNER_API_TOKEN", "test-token"); err != nil {
+		t.Fatalf("Failed to set environment variable: %v", err)
+	}
 
 	// Test successful update
 	t.Run("successful record update", func(t *testing.T) {
@@ -173,7 +179,9 @@ func TestUpdateRecord(t *testing.T) {
 func TestGetApiToken(t *testing.T) {
 	t.Run("valid token", func(t *testing.T) {
 		expected := "test-token"
-		os.Setenv("HETZNER_API_TOKEN", expected)
+		if err := os.Setenv("HETZNER_API_TOKEN", expected); err != nil {
+			t.Fatalf("Failed to set environment variable: %v", err)
+		}
 
 		got := hetzner.GetApiToken()
 		if got != expected {
@@ -182,7 +190,9 @@ func TestGetApiToken(t *testing.T) {
 	})
 
 	t.Run("missing token", func(t *testing.T) {
-		os.Unsetenv("HETZNER_API_TOKEN")
+		if err := os.Unsetenv("HETZNER_API_TOKEN"); err != nil {
+			t.Fatalf("Failed to unset environment variable: %v", err)
+		}
 
 		defer func() {
 			if r := recover(); r == nil {
