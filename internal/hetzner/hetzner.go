@@ -24,6 +24,8 @@ type RecordsResponse struct {
 	Records []Record `json:"records"`
 }
 
+var BaseURL = "https://dns.hetzner.com/api/v1"
+
 func GetApiToken() string {
 	apiToken := os.Getenv("HETZNER_API_TOKEN")
 	if apiToken == "" {
@@ -34,7 +36,7 @@ func GetApiToken() string {
 
 func GetAllRecordsByZone(zoneID string) ([]Record, error) {
 	client := &http.Client{}
-	url := fmt.Sprintf("https://dns.hetzner.com/api/v1/records?zone_id=%s", zoneID)
+	url := fmt.Sprintf("%s/records?zone_id=%s", BaseURL, zoneID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -62,12 +64,17 @@ func GetAllRecordsByZone(zoneID string) ([]Record, error) {
 }
 
 func UpdateRecord(record Record) error {
+	// Validate required fields
+	if record.ID == "" || record.Type == "" || record.Name == "" || record.ZoneID == "" {
+		return fmt.Errorf("invalid record: missing required fields")
+	}
+
 	jsonContent := fmt.Sprintf(`{"value":"%s","ttl":%d,"type":"%s","name":"%s","zone_id":"%s"}`,
 		record.Value, record.TTL, record.Type, record.Name, record.ZoneID)
 	body := bytes.NewBufferString(jsonContent)
 
 	client := &http.Client{}
-	url := fmt.Sprintf("https://dns.hetzner.com/api/v1/records/%s", record.ID)
+	url := fmt.Sprintf("%s/records/%s", BaseURL, record.ID)
 
 	req, err := http.NewRequest("PUT", url, body)
 	if err != nil {
