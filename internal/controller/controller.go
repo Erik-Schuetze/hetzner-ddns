@@ -29,9 +29,13 @@ func NewController(cfg *config.Config, configPath string) *Controller {
 
 // Run starts the reconciliation loop and handles graceful shutdown
 func (c *Controller) Run(ctx context.Context) error {
+	// start a goroutine to check for config changes
+	configTicker := time.NewTicker(1 * time.Minute)
+	defer configTicker.Stop()
+
 	// Start a goroutine to query the API and handle ddns updates
-	ticker := time.NewTicker(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
-	defer ticker.Stop()
+	DdnsTicker := time.NewTicker(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
+	defer DdnsTicker.Stop()
 
 	// Do initial reconciliation
 	if err := c.reconcile(); err != nil {
@@ -43,13 +47,23 @@ func (c *Controller) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			log.Println("Shutting down gracefully...")
 			return nil
-		case <-ticker.C:
+		case <-configTicker.C:
+			// Store current interval before reload
+			currentInterval := c.config.Params.RefreshInterval
+
 			// Reload config first
 			if err := c.reloadConfig(); err != nil {
 				log.Printf("Failed to reload config: %v", err)
 				continue
 			}
 
+			// Check if interval changed
+			if currentInterval != c.config.Params.RefreshInterval {
+				log.Printf("Refresh interval changed from %d to %d minutes, resetting DDNS ticker",
+					currentInterval, c.config.Params.RefreshInterval)
+				DdnsTicker.Reset(time.Duration(c.config.Params.RefreshInterval) * time.Minute)
+			}
+		case <-DdnsTicker.C:
 			// Then reconcile
 			if err := c.reconcile(); err != nil {
 				log.Printf("Error in reconciliation: %v", err)
