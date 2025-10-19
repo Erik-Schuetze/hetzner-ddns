@@ -18,7 +18,7 @@ GitHub account (for container registry access)
 ## Installation
 ### 1. Create Namespace
 ```
-kubectl create namespace hetzner-ddns+
+kubectl create namespace hetzner-ddns
 ```
 
 ### 2. Container Registry Access
