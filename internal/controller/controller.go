@@ -13,6 +13,14 @@ import (
 	"github.com/erik-schuetze/hetzner-ddns/internal/ipdetect"
 )
 
+var (
+	detectPublicIP  = ipdetect.GetPublicIP
+	getRRSet        = hetzner.GetRRSet
+	createRRSet     = hetzner.CreateRRSet
+	changeRRSetTTL  = hetzner.ChangeRRSetTTL
+	setRRSetRecords = hetzner.SetRRSetRecords
+)
+
 type Controller struct {
 	config     *config.Config
 	configPath string
@@ -90,7 +98,7 @@ func (c *Controller) reloadConfig() error {
 
 func (c *Controller) reconcile() error {
 	// Get the public IP address
-	ip, err := ipdetect.GetPublicIP()
+	ip, err := detectPublicIP()
 	if err != nil {
 		return fmt.Errorf("failed to detect public IP: %w", err)
 	}
@@ -101,10 +109,12 @@ func (c *Controller) reconcile() error {
 
 	for _, zone := range c.config.Hetzner.Zones {
 		for _, configRecord := range zone.Records {
-			rrset, err := hetzner.GetRRSet(zone.Name, configRecord.Name, configRecord.Type)
+			rrset, err := getRRSet(zone.Name, configRecord.Name, configRecord.Type)
 			if err != nil {
 				if errors.Is(err, hetzner.ErrRRSetNotFound) {
-					log.Printf("Configured RRSet not found - zone: %s, name: %s, type: %s", zone.Name, configRecord.Name, configRecord.Type)
+					if err := c.createRecord(zone.Name, configRecord, ip); err != nil {
+						log.Printf("Error creating record %s: %v", configRecord.Name, err)
+					}
 					continue
 				}
 				return fmt.Errorf("failed to get rrset for zone %s record %s/%s: %w", zone.Name, configRecord.Name, configRecord.Type, err)
@@ -120,19 +130,28 @@ func (c *Controller) reconcile() error {
 	return nil
 }
 
+func (c *Controller) createRecord(zoneName string, configRecord config.Record, ip string) error {
+	if err := createRRSet(zoneName, configRecord.Name, configRecord.Type, configRecord.TTL, []string{ip}); err != nil {
+		return fmt.Errorf("failed to create rrset: %w", err)
+	}
+
+	log.Printf("Created RRSet - zone: %s, name: %s, type: %s, TTL: %d, value: %s", zoneName, configRecord.Name, configRecord.Type, configRecord.TTL, ip)
+	return nil
+}
+
 // Helper function to make the code more readable
 func (c *Controller) updateRecordIfNeeded(zoneName string, configRecord config.Record, currentRRSet hetzner.RRSet, ip string) error {
 	needsValueUpdate := len(currentRRSet.Records) != 1 || currentRRSet.Records[0].Value != ip
 
 	if configRecord.TTL != currentRRSet.TTL {
-		if err := hetzner.ChangeRRSetTTL(zoneName, configRecord.Name, configRecord.Type, configRecord.TTL); err != nil {
+		if err := changeRRSetTTL(zoneName, configRecord.Name, configRecord.Type, configRecord.TTL); err != nil {
 			return fmt.Errorf("failed to update ttl: %w", err)
 		}
 		log.Printf("Updated TTL - zone: %s, name: %s, type: %s, TTL: %d", zoneName, configRecord.Name, configRecord.Type, configRecord.TTL)
 	}
 
 	if needsValueUpdate {
-		if err := hetzner.SetRRSetRecords(zoneName, configRecord.Name, configRecord.Type, []string{ip}); err != nil {
+		if err := setRRSetRecords(zoneName, configRecord.Name, configRecord.Type, []string{ip}); err != nil {
 			return fmt.Errorf("failed to update records: %w", err)
 		}
 		log.Printf("Updated Value - zone: %s, name: %s, type: %s, value: %s", zoneName, configRecord.Name, configRecord.Type, ip)

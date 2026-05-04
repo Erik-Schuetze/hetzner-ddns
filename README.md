@@ -8,7 +8,7 @@ Multiple DNS records supported
 Kubernetes native deployment
 
 ## How It Works
-The controller periodically checks your public IP address from redundant sources (checkip.amazonaws.com, api.ipify.org, icanhazip.com) and updates configured DNS records in Hetzner DNS if changes are detected. This ensures your domain always points to your current IP address, even when it changes.
+The controller periodically checks your public IP address from redundant sources (checkip.amazonaws.com, api.ipify.org, icanhazip.com) and updates configured DNS records in Hetzner DNS if changes are detected. If a record is declared in config but missing in Hetzner, the controller creates it automatically. This ensures your domain always points to your current IP address, even when it changes.
 
 > [!IMPORTANT]
 > This version targets Hetzner's new Cloud DNS API and requires zones to be migrated to Hetzner Console first. The legacy `dns.hetzner.com` API is no longer used by this controller.

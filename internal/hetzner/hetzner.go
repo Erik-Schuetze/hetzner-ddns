@@ -104,6 +104,28 @@ func GetRRSet(zoneName, recordName, recordType string) (RRSet, error) {
 	}, nil
 }
 
+func CreateRRSet(zoneName, recordName, recordType string, ttl int, values []string) error {
+	payload := struct {
+		Name    string        `json:"name"`
+		Type    string        `json:"type"`
+		TTL     int           `json:"ttl"`
+		Records []RRSetRecord `json:"records"`
+	}{
+		Name:    recordName,
+		Type:    strings.ToUpper(recordType),
+		TTL:     ttl,
+		Records: buildRRSetRecords(values),
+	}
+
+	return doActionRequest(
+		http.MethodPost,
+		buildRRSetCollectionURL(zoneName),
+		payload,
+		http.StatusCreated,
+		http.StatusAccepted,
+	)
+}
+
 func SetRRSetRecords(zoneName, recordName, recordType string, values []string) error {
 	payload := struct {
 		Records []RRSetRecord `json:"records"`
@@ -186,6 +208,10 @@ func buildRRSetURL(zoneName, recordName, recordType string) string {
 		url.PathEscape(recordName),
 		url.PathEscape(strings.ToUpper(recordType)),
 	)
+}
+
+func buildRRSetCollectionURL(zoneName string) string {
+	return fmt.Sprintf("%s/zones/%s/rrsets", BaseURL, url.PathEscape(zoneName))
 }
 
 func buildRRSetActionURL(zoneName, recordName, recordType, action string) string {

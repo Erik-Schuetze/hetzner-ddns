@@ -146,6 +146,79 @@ func TestSetRRSetRecords(t *testing.T) {
 	}
 }
 
+func TestCreateRRSet(t *testing.T) {
+	originalBaseURL := hetzner.BaseURL
+	defer func() { hetzner.BaseURL = originalBaseURL }()
+
+	t.Setenv("HETZNER_CLOUD_API_TOKEN", "test-token")
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			if r.Method != http.MethodPost {
+				t.Fatalf("method = %s, want POST", r.Method)
+			}
+			if got := r.URL.EscapedPath(); got != "/zones/example.com/rrsets" {
+				t.Fatalf("path = %s, want %s", got, "/zones/example.com/rrsets")
+			}
+
+			var payload struct {
+				Name    string                `json:"name"`
+				Type    string                `json:"type"`
+				TTL     int                   `json:"ttl"`
+				Records []hetzner.RRSetRecord `json:"records"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decoding request body: %v", err)
+			}
+			if payload.Name != "mail" || payload.Type != "A" || payload.TTL != 4000 {
+				t.Fatalf("payload = %#v, want name mail, type A, ttl 4000", payload)
+			}
+			if len(payload.Records) != 1 || payload.Records[0].Value != "1.2.3.4" {
+				t.Fatalf("payload.Records = %#v, want single value 1.2.3.4", payload.Records)
+			}
+
+			w.WriteHeader(http.StatusCreated)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"action": map[string]any{
+					"id":     77,
+					"status": "running",
+				},
+			}); err != nil {
+				t.Fatalf("encoding action response: %v", err)
+			}
+		case 2:
+			if r.Method != http.MethodGet {
+				t.Fatalf("poll method = %s, want GET", r.Method)
+			}
+			if got := r.URL.EscapedPath(); got != "/zones/actions/77" {
+				t.Fatalf("poll path = %s, want %s", got, "/zones/actions/77")
+			}
+			w.WriteHeader(http.StatusOK)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"action": map[string]any{
+					"id":     77,
+					"status": "success",
+				},
+			}); err != nil {
+				t.Fatalf("encoding action poll response: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+		}
+	}))
+	defer server.Close()
+
+	hetzner.BaseURL = server.URL
+
+	if err := hetzner.CreateRRSet("example.com", "mail", "A", 4000, []string{"1.2.3.4"}); err != nil {
+		t.Fatalf("CreateRRSet() error = %v", err)
+	}
+}
+
 func TestChangeRRSetTTL(t *testing.T) {
 	originalBaseURL := hetzner.BaseURL
 	defer func() { hetzner.BaseURL = originalBaseURL }()
