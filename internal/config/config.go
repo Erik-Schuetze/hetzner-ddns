@@ -5,13 +5,17 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/erik-schuetze/hetzner-ddns/internal/hetzner"
 )
 
+type Record struct {
+	Name string `yaml:"name"`
+	Type string `yaml:"type"`
+	TTL  int    `yaml:"ttl"`
+}
+
 type Zone struct {
-	ZoneID  string           `yaml:"zone_id"`
-	Records []hetzner.Record `yaml:"records"`
+	Name    string   `yaml:"zone_name"`
+	Records []Record `yaml:"records"`
 }
 
 type Config struct {
@@ -39,9 +43,9 @@ func Load(configPath string) (*Config, error) {
 }
 
 func (c *Config) Print() {
-	fmt.Printf("refresh_interval: %d", c.Params.RefreshInterval)
+	fmt.Printf("refresh_interval: %d\n", c.Params.RefreshInterval)
 	for _, zone := range c.Hetzner.Zones {
-		fmt.Printf("ZoneID: %s\n", zone.ZoneID)
+		fmt.Printf("ZoneName: %s\n", zone.Name)
 		for _, record := range zone.Records {
 			fmt.Printf("  Type: %s, Name: %s, TTL: %d\n", record.Type, record.Name, record.TTL)
 		}

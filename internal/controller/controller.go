@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -99,19 +100,19 @@ func (c *Controller) reconcile() error {
 	defer c.mu.RUnlock()
 
 	for _, zone := range c.config.Hetzner.Zones {
-		hetznerRecords, err := hetzner.GetAllRecordsByZone(zone.ZoneID)
-		if err != nil {
-			return fmt.Errorf("failed to get records for zone %s: %w", zone.ZoneID, err)
-		}
-
 		for _, configRecord := range zone.Records {
-			for _, hetznerRecord := range hetznerRecords {
-				if configRecord.Name == hetznerRecord.Name && configRecord.Type == hetznerRecord.Type {
-					if err := c.updateRecordIfNeeded(zone.ZoneID, configRecord, hetznerRecord, ip); err != nil {
-						log.Printf("Error updating record %s: %v", configRecord.Name, err)
-						continue
-					}
+			rrset, err := hetzner.GetRRSet(zone.Name, configRecord.Name, configRecord.Type)
+			if err != nil {
+				if errors.Is(err, hetzner.ErrRRSetNotFound) {
+					log.Printf("Configured RRSet not found - zone: %s, name: %s, type: %s", zone.Name, configRecord.Name, configRecord.Type)
+					continue
 				}
+				return fmt.Errorf("failed to get rrset for zone %s record %s/%s: %w", zone.Name, configRecord.Name, configRecord.Type, err)
+			}
+
+			if err := c.updateRecordIfNeeded(zone.Name, configRecord, rrset, ip); err != nil {
+				log.Printf("Error updating record %s: %v", configRecord.Name, err)
+				continue
 			}
 		}
 	}
@@ -120,23 +121,23 @@ func (c *Controller) reconcile() error {
 }
 
 // Helper function to make the code more readable
-func (c *Controller) updateRecordIfNeeded(zoneID string, configRecord hetzner.Record, hetznerRecord hetzner.Record, ip string) error {
-	if configRecord.TTL != hetznerRecord.TTL {
-		hetznerRecord.TTL = configRecord.TTL
-		if err := hetzner.UpdateRecord(hetznerRecord); err != nil {
-			return fmt.Errorf("failed to update TTL: %w", err)
+func (c *Controller) updateRecordIfNeeded(zoneName string, configRecord config.Record, currentRRSet hetzner.RRSet, ip string) error {
+	needsValueUpdate := len(currentRRSet.Records) != 1 || currentRRSet.Records[0].Value != ip
+
+	if configRecord.TTL != currentRRSet.TTL {
+		if err := hetzner.ChangeRRSetTTL(zoneName, configRecord.Name, configRecord.Type, configRecord.TTL); err != nil {
+			return fmt.Errorf("failed to update ttl: %w", err)
 		}
-		log.Printf("Updated TTL - zone: %s, name: %s, TTL: %d", zoneID, configRecord.Name, hetznerRecord.TTL)
+		log.Printf("Updated TTL - zone: %s, name: %s, type: %s, TTL: %d", zoneName, configRecord.Name, configRecord.Type, configRecord.TTL)
 	}
 
-	if ip != hetznerRecord.Value {
-		hetznerRecord.Value = ip
-		if err := hetzner.UpdateRecord(hetznerRecord); err != nil {
-			return fmt.Errorf("failed to update IP: %w", err)
+	if needsValueUpdate {
+		if err := hetzner.SetRRSetRecords(zoneName, configRecord.Name, configRecord.Type, []string{ip}); err != nil {
+			return fmt.Errorf("failed to update records: %w", err)
 		}
-		log.Printf("Updated Value - zone: %s, name: %s, value: %s", zoneID, configRecord.Name, hetznerRecord.Value)
+		log.Printf("Updated Value - zone: %s, name: %s, type: %s, value: %s", zoneName, configRecord.Name, configRecord.Type, ip)
 	} else {
-		log.Printf("No update needed - zone: %s, name: %s", zoneID, configRecord.Name)
+		log.Printf("No update needed - zone: %s, name: %s", zoneName, configRecord.Name)
 	}
 
 	return nil

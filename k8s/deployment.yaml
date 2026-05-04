@@ -17,11 +17,11 @@ spec:
       - name: ddns
         image: your-repo/hetzner-ddns:latest
         env:
-        - name: HETZNER_API_TOKEN
+        - name: HETZNER_CLOUD_API_TOKEN
           valueFrom:
             secretKeyRef:
               name: hetzner-ddns-secret
-              key: HETZNER_API_TOKEN
+              key: HETZNER_CLOUD_API_TOKEN
         volumeMounts:
         - name: config-volume
           mountPath: /config

@@ -9,7 +9,7 @@ data:
       refresh_interval: 15
     hetzner:
       zones:
-        - zone_id: "your-zone"
+        - zone_name: "example.com"
           records:
             - name: "@"
               type: "A"

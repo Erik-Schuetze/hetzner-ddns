@@ -1,2 +1,3 @@
+.DS_Store
 .env
 local-k8s/*

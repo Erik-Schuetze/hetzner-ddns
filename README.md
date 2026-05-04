@@ -1,5 +1,5 @@
 # Hetzner DDNS Controller
-A Kubernetes controller to automatically update Hetzner DNS records with your current public IP address. Perfect for home labs or self-hosted services with dynamic IP addresses.
+A Kubernetes controller to automatically update migrated Hetzner DNS records with your current public IP address using the Hetzner Cloud DNS API. Perfect for home labs or self-hosted services with dynamic IP addresses.
 
 ## Features
 Automatic IP detection and DNS record updates
@@ -10,9 +10,12 @@ Kubernetes native deployment
 ## How It Works
 The controller periodically checks your public IP address from redundant sources (checkip.amazonaws.com, api.ipify.org, icanhazip.com) and updates configured DNS records in Hetzner DNS if changes are detected. This ensures your domain always points to your current IP address, even when it changes.
 
+> [!IMPORTANT]
+> This version targets Hetzner's new Cloud DNS API and requires zones to be migrated to Hetzner Console first. The legacy `dns.hetzner.com` API is no longer used by this controller.
+
 ## Prerequisites
 Kubernetes cluster
-Hetzner DNS account
+Hetzner Console project with migrated DNS zones
 GitHub account (for container registry access)
 
 ## Installation
@@ -36,23 +39,21 @@ kubectl create secret docker-registry ghcr-secret \
 --docker-password=<your-github-pat>
 ```
 
-### 3. Hetzner API Token
-Granting the container access to your Hetzner DNS API
-- Log into your Hetzner DNS Console
-- Click the top right corner to expand the menu
-- Select "API Tokens"
-- Click "Create API Token"
+### 3. Hetzner Cloud API Token
+Grant the container access to your migrated DNS zones:
+- Migrate each zone to Hetzner Console before deploying this version.
+- Create a Hetzner Cloud API token in Hetzner Console with access to the project that contains the migrated zones.
 - Create the Kubernetes secret:
 ```
 kubectl create secret generic hetzner-ddns-secret \
   --namespace hetzner-ddns \
-  --from-literal=HETZNER_API_TOKEN=<your-hetzner-token>
+  --from-literal=HETZNER_CLOUD_API_TOKEN=<your-hetzner-cloud-token>
 ```
-- Or via YAML with the provided k8s/secret.yam
+- Or via YAML with the provided `k8s/secret.yaml`
 ```
 kubectl apply -f k8s/secret.yaml
 ```
-### 4. Edit the configMap in k8s/configmap.yaml and enter your DNS records
+### 4. Edit the ConfigMap in k8s/configmap.yaml and enter your DNS zones and records
 See the section Configuration Options for more details
 
 ### 5. Deploy the Controller
@@ -67,14 +68,11 @@ kubectl -n hetzner-ddns logs -f deployment/hetzner-ddns-deployment
 ```
 
 ## Configuration Options
-### Zone ID
-To find your Zone ID:
-- Go to Hetzner DNS Console
-- Click on your domain
-- The Zone ID is shown in the overview
+### Zone Name
+Set `zone_name` to the migrated zone's domain name, for example `example.com`.
   
 ### Refresh Interval
-Set refreshInterval in the ConfigMap to control how often the controller checks for IP changes (in minutes).
+Set `refresh_interval` in the ConfigMap to control how often the controller checks for IP changes (in minutes).
 
 ### DNS Records
 Configure multiple records under the same zone:
@@ -82,6 +80,15 @@ Configure multiple records under the same zone:
 name: Subdomain name
 type: Record type (typically "A" for IPv4)
 ttl: Time to live in seconds
+
+### Migration checklist
+Before rolling out this version:
+1. Verify the zone satisfies Hetzner's migration requirements.
+2. Migrate the zone to Hetzner Console.
+3. Create a new Hetzner Cloud API token in Hetzner Console.
+4. Update the Kubernetes secret and deploy the new image.
+
+See `docs/migration-guide.md` for the release-specific migration steps.
 
 
 ## Troubleshooting

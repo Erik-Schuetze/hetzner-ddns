@@ -2,204 +2,236 @@ package hetzner_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/erik-schuetze/hetzner-ddns/internal/hetzner"
 )
 
-func TestGetAllRecordsByZone(t *testing.T) {
-	// Setup test server
-	records := []hetzner.Record{
-		{
-			ID:      "1",
-			Type:    "A",
-			Name:    "test",
-			Value:   "1.2.3.4",
-			ZoneID:  "zone1",
-			TTL:     3600,
-			Created: "2023-01-01",
-		},
-	}
-
-	// Save original API URL and restore after test
+func TestGetRRSet(t *testing.T) {
 	originalBaseURL := hetzner.BaseURL
 	defer func() { hetzner.BaseURL = originalBaseURL }()
 
+	t.Setenv("HETZNER_CLOUD_API_TOKEN", "test-token")
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request
-		if r.Method != "GET" {
-			t.Errorf("Expected GET request, got %s", r.Method)
-		}
-		if r.Header.Get("Auth-API-Token") == "" {
-			t.Error("Missing Auth-API-Token header")
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("Authorization header = %q, want %q", got, "Bearer test-token")
 		}
 
-		// Send response
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(hetzner.RecordsResponse{Records: records}); err != nil {
-			t.Errorf("Failed to encode response: %v", err)
+		switch r.URL.Path {
+		case "/zones/example.com/rrsets/@/A":
+			if r.Method != http.MethodGet {
+				t.Fatalf("method = %s, want GET", r.Method)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"rrset": map[string]any{
+					"name": "@",
+					"type": "A",
+					"ttl":  3600,
+					"records": []map[string]any{
+						{"value": "1.2.3.4"},
+					},
+				},
+			}); err != nil {
+				t.Fatalf("encoding response: %v", err)
+			}
+		case "/zones/example.com/rrsets/missing/A":
+			http.NotFound(w, r)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	// Set test server URL as base URL
 	hetzner.BaseURL = server.URL
 
-	// Set test environment
-	if err := os.Setenv("HETZNER_API_TOKEN", "test-token"); err != nil {
-		t.Fatalf("Failed to set environment variable: %v", err)
+	rrset, err := hetzner.GetRRSet("example.com", "@", "A")
+	if err != nil {
+		t.Fatalf("GetRRSet() error = %v", err)
 	}
 
-	// Test successful case
-	t.Run("successful records retrieval", func(t *testing.T) {
-		got, err := hetzner.GetAllRecordsByZone("zone1")
-		if err != nil {
-			t.Fatalf("GetAllRecordsByZone() error = %v", err)
-		}
-		if len(got) != len(records) {
-			t.Errorf("GetAllRecordsByZone() got %v records, want %v", len(got), len(records))
-		}
-	})
+	if rrset.Name != "@" {
+		t.Fatalf("rrset.Name = %q, want %q", rrset.Name, "@")
+	}
+	if rrset.Type != "A" {
+		t.Fatalf("rrset.Type = %q, want %q", rrset.Type, "A")
+	}
+	if rrset.TTL != 3600 {
+		t.Fatalf("rrset.TTL = %d, want %d", rrset.TTL, 3600)
+	}
+	if len(rrset.Records) != 1 || rrset.Records[0].Value != "1.2.3.4" {
+		t.Fatalf("rrset.Records = %#v, want single value 1.2.3.4", rrset.Records)
+	}
+
+	_, err = hetzner.GetRRSet("example.com", "missing", "A")
+	if !errors.Is(err, hetzner.ErrRRSetNotFound) {
+		t.Fatalf("GetRRSet() missing error = %v, want ErrRRSetNotFound", err)
+	}
 }
 
-func TestUpdateRecord(t *testing.T) {
-	// Save original API URL and restore after test
+func TestSetRRSetRecords(t *testing.T) {
 	originalBaseURL := hetzner.BaseURL
 	defer func() { hetzner.BaseURL = originalBaseURL }()
 
-	// Setup test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Verify request
-		if r.Method != "PUT" {
-			t.Errorf("Expected PUT request, got %s", r.Method)
-		}
-		if r.Header.Get("Auth-API-Token") == "" {
-			t.Error("Missing Auth-API-Token header")
-		}
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Error("Missing Content-Type header")
-		}
+	t.Setenv("HETZNER_CLOUD_API_TOKEN", "test-token")
 
-		// Return success
-		w.WriteHeader(http.StatusOK)
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			if r.Method != http.MethodPost {
+				t.Fatalf("method = %s, want POST", r.Method)
+			}
+			if got := r.URL.EscapedPath(); got != "/zones/example.com/rrsets/www/A/actions/set_records" {
+				t.Fatalf("path = %s, want %s", got, "/zones/example.com/rrsets/www/A/actions/set_records")
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+				t.Fatalf("Authorization header = %q, want %q", got, "Bearer test-token")
+			}
+			if got := r.Header.Get("Content-Type"); got != "application/json" {
+				t.Fatalf("Content-Type = %q, want %q", got, "application/json")
+			}
+
+			var payload struct {
+				Records []hetzner.RRSetRecord `json:"records"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decoding request body: %v", err)
+			}
+			if len(payload.Records) != 1 || payload.Records[0].Value != "1.2.3.4" {
+				t.Fatalf("payload.Records = %#v, want single value 1.2.3.4", payload.Records)
+			}
+
+			w.WriteHeader(http.StatusCreated)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"action": map[string]any{
+					"id":     42,
+					"status": "running",
+				},
+			}); err != nil {
+				t.Fatalf("encoding action response: %v", err)
+			}
+		case 2:
+			if r.Method != http.MethodGet {
+				t.Fatalf("poll method = %s, want GET", r.Method)
+			}
+			if got := r.URL.EscapedPath(); got != "/zones/actions/42" {
+				t.Fatalf("poll path = %s, want %s", got, "/zones/actions/42")
+			}
+			w.WriteHeader(http.StatusOK)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"action": map[string]any{
+					"id":     42,
+					"status": "success",
+				},
+			}); err != nil {
+				t.Fatalf("encoding action poll response: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+		}
 	}))
 	defer server.Close()
 
-	// Set test server URL as base URL
 	hetzner.BaseURL = server.URL
 
-	// Set test environment
-	if err := os.Setenv("HETZNER_API_TOKEN", "test-token"); err != nil {
-		t.Fatalf("Failed to set environment variable: %v", err)
+	if err := hetzner.SetRRSetRecords("example.com", "www", "A", []string{"1.2.3.4"}); err != nil {
+		t.Fatalf("SetRRSetRecords() error = %v", err)
 	}
-
-	// Test successful update
-	t.Run("successful record update", func(t *testing.T) {
-		record := hetzner.Record{
-			ID:     "test-id",
-			Type:   "A",
-			Name:   "test.example.com",
-			Value:  "1.2.3.4",
-			ZoneID: "zone1",
-			TTL:    3600,
-		}
-
-		err := hetzner.UpdateRecord(record)
-		if err != nil {
-			t.Fatalf("UpdateRecord() error = %v", err)
-		}
-	})
-
-	// Test error cases
-	t.Run("invalid record", func(t *testing.T) {
-		record := hetzner.Record{} // Empty record
-		err := hetzner.UpdateRecord(record)
-		if err == nil {
-			t.Error("UpdateRecord() expected error for invalid record")
-		}
-	})
-
-	// Test error cases
-	t.Run("invalid records", func(t *testing.T) {
-		tests := []struct {
-			name   string
-			record hetzner.Record
-		}{
-			{
-				name:   "empty record",
-				record: hetzner.Record{},
-			},
-			{
-				name: "missing ID",
-				record: hetzner.Record{
-					Type:   "A",
-					Name:   "test",
-					ZoneID: "zone1",
-				},
-			},
-			{
-				name: "missing Type",
-				record: hetzner.Record{
-					ID:     "1",
-					Name:   "test",
-					ZoneID: "zone1",
-				},
-			},
-			{
-				name: "missing Name",
-				record: hetzner.Record{
-					ID:     "1",
-					Type:   "A",
-					ZoneID: "zone1",
-				},
-			},
-			{
-				name: "missing ZoneID",
-				record: hetzner.Record{
-					ID:   "1",
-					Type: "A",
-					Name: "test",
-				},
-			},
-		}
-
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				if err := hetzner.UpdateRecord(tt.record); err == nil {
-					t.Errorf("UpdateRecord() expected error for %s", tt.name)
-				}
-			})
-		}
-	})
 }
 
-func TestGetApiToken(t *testing.T) {
+func TestChangeRRSetTTL(t *testing.T) {
+	originalBaseURL := hetzner.BaseURL
+	defer func() { hetzner.BaseURL = originalBaseURL }()
+
+	t.Setenv("HETZNER_CLOUD_API_TOKEN", "test-token")
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+
+		switch requestCount {
+		case 1:
+			if r.Method != http.MethodPost {
+				t.Fatalf("first method = %s, want POST", r.Method)
+			}
+			if got := r.URL.EscapedPath(); got != "/zones/example.com/rrsets/www/A/actions/change_ttl" {
+				t.Fatalf("first path = %s, want %s", got, "/zones/example.com/rrsets/www/A/actions/change_ttl")
+			}
+
+			var payload struct {
+				TTL int `json:"ttl"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decoding request body: %v", err)
+			}
+			if payload.TTL != 120 {
+				t.Fatalf("payload.TTL = %d, want %d", payload.TTL, 120)
+			}
+
+			w.WriteHeader(http.StatusAccepted)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"action": map[string]any{
+					"id":     99,
+					"status": "running",
+				},
+			}); err != nil {
+				t.Fatalf("encoding action response: %v", err)
+			}
+		case 2:
+			if r.Method != http.MethodGet {
+				t.Fatalf("second method = %s, want GET", r.Method)
+			}
+			if got := r.URL.EscapedPath(); got != "/zones/actions/99" {
+				t.Fatalf("second path = %s, want %s", got, "/zones/actions/99")
+			}
+			w.WriteHeader(http.StatusOK)
+			if err := json.NewEncoder(w).Encode(map[string]any{
+				"action": map[string]any{
+					"id":     99,
+					"status": "success",
+				},
+			}); err != nil {
+				t.Fatalf("encoding action poll response: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected request count: %d", requestCount)
+		}
+	}))
+	defer server.Close()
+
+	hetzner.BaseURL = server.URL
+
+	if err := hetzner.ChangeRRSetTTL("example.com", "www", "A", 120); err != nil {
+		t.Fatalf("ChangeRRSetTTL() error = %v", err)
+	}
+}
+
+func TestGetAPIToken(t *testing.T) {
 	t.Run("valid token", func(t *testing.T) {
-		expected := "test-token"
-		if err := os.Setenv("HETZNER_API_TOKEN", expected); err != nil {
-			t.Fatalf("Failed to set environment variable: %v", err)
-		}
+		t.Setenv("HETZNER_CLOUD_API_TOKEN", "test-token")
 
-		got := hetzner.GetApiToken()
-		if got != expected {
-			t.Errorf("GetApiToken() = %v, want %v", got, expected)
+		got := hetzner.GetAPIToken()
+		if got != "test-token" {
+			t.Fatalf("GetAPIToken() = %q, want %q", got, "test-token")
 		}
 	})
 
 	t.Run("missing token", func(t *testing.T) {
-		if err := os.Unsetenv("HETZNER_API_TOKEN"); err != nil {
-			t.Fatalf("Failed to unset environment variable: %v", err)
-		}
+		t.Setenv("HETZNER_CLOUD_API_TOKEN", "")
 
 		defer func() {
 			if r := recover(); r == nil {
-				t.Error("GetApiToken() expected panic for missing token")
+				t.Fatal("GetAPIToken() expected panic for missing token")
 			}
 		}()
 
-		hetzner.GetApiToken()
+		hetzner.GetAPIToken()
 	})
 }
